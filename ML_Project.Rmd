@@ -1,0 +1,163 @@
+---
+title: "Practical Machine Learning Project"
+author: "Alexander Sanchez"
+date: "1/21/2020"
+output: html_document
+---
+
+
+## Context
+
+We use the data of the Human Activity Recognition(HAR) is collected of 6 participants that performed an exercise in 5 different ways: 1 correctly and the other 4 incorrectly. The objective of the project is to build a model that can identify in which way the excercise was executed. 
+
+
+## Data Exploration
+
+
+```{r loadData, echo=FALSE}
+library(lattice)
+library(ggplot2)
+library(caret)
+
+
+
+data = read.csv("C:/Users/Alex/Documents/Coursera/Data Science/Machine Learning/pml-training.csv")
+validation = read.csv("C:/Users/Alex/Documents/Coursera/Data Science/Machine Learning/pml-testing.csv")
+```
+
+
+We take a look to the each feature name and it's data class.
+
+```{r dataClass}
+sapply(data, class)
+```
+
+The variable that we are going to predicted is called clasee, we take a look to it.
+
+```{r pressure, echo=FALSE}
+ggplot(data) + geom_bar(mapping = aes(x = classe)) + ggtitle("Exercise type distribution") + theme(plot.title = element_text( size=14, face="bold"))
+```
+
+## Data Pre-processing
+
+We remove the columns that more of 50% of their values area N/A or in blank.
+
+```{r removeNA}
+is50NA <- colSums(is.na(data)) < nrow(data) * 0.5
+is50Empty <-  colSums((data == '')) < nrow(data) * 0.5
+
+data <- data[ , is50NA & is50Empty ]
+validation <- validation[ , is50NA & is50Empty ]
+```
+
+Then we remove the first 7 columns, because they have no relevance to the prediction.
+
+```{r remove7}
+data <- data[ , -1:-7 ]
+validation <- validation[ , -1:-7 ]
+```
+
+To finish the preprocesing part we take the highly correalated feature and remove the feature with the largest mean absolute correlation.
+
+```{r highCorrelation}
+set.seed(3883)
+dataCorrelation <- cor(data[sapply(data,is.numeric)])
+highCorrelation <- findCorrelation(dataCorrelation, cutoff=0.8, exact = TRUE)
+data <- data[,-highCorrelation]
+validation <- validation[,-highCorrelation]
+```
+
+Check if there is ay factor with Zero and near Zero-Variance.
+
+```{r nearZeroVar}
+nzv <- nearZeroVar(data[,-53])
+length(nzv)
+```
+
+## Data Split
+
+We split the data into train and test data
+
+```{r split}
+trainIndex <- createDataPartition(data$classe, p=0.6, list=FALSE)
+data_train <- data[ trainIndex,]
+data_test <- data[-trainIndex,]
+```
+
+## Model Training
+
+We use K-fold cross validation. 
+
+```{r trainData}
+train_control <- trainControl(method="repeatedcv", number=3, repeats=3)
+```
+
+We train the model with Classification Trees first and predict on the test data.
+
+```{r treeModel}
+set.seed(5665)
+TreeModel <- train(classe~., data=data_train, trControl=train_control, method="rpart")
+TreePedict <- predict(TreeModel, newdata = data_test)
+```
+
+Then we train the Gradient Boosting Machine and predict on the test data.
+
+```{r GBMModel}
+set.seed(5665)
+GBMModel <- train(classe~., data=data_train, trControl=train_control, method="gbm", verbose = F)
+GBMPedict <- predict(GBMModel, newdata = data_test)
+```
+
+At last we train Random Forest and predict on the test data.
+
+```{r RFModel}
+set.seed(5665)
+RFModel <- train(classe~., data=data_train, trControl=train_control, method="rf")
+RFPedict <- predict(RFModel, newdata = data_test)
+```
+
+## Compare Models
+
+we compare the resampling profiles between models.
+
+```{r resamples}
+resamps <- resamples(list(TR = TreeModel,
+                          GBM = GBMModel,
+                          RF = RFModel))
+
+trellis.par.set(caretTheme())
+bwplot(resamps, metric = "Accuracy")
+```
+
+We compare the test predictions with the actual result
+
+```{r TreeResult}
+TreeResult <- confusionMatrix(data_test$classe, TreePedict)
+TreeResult
+```
+
+The classification Tree accuracy is araund 52%
+
+```{r GBMResult}
+GBMResult <- confusionMatrix(data_test$classe, GBMPedict)
+GBMResult
+```
+
+The Gradient Boosting Machine accuracy is 95%
+
+```{r RFResult}
+RFResult <- confusionMatrix(data_test$classe, RFPedict)
+RFResult
+```
+
+The Random Forest accuracy is around 99%
+
+
+## Validation
+
+Random Forest is the most accurate model, so we predict the validate data
+
+```{r valiPred}
+validationPedict <- predict(RFModel, newdata = validation)
+validationPedict
+```
